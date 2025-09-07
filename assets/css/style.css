@@ -153,7 +153,7 @@ h1, h2, h3, h4, h5, h6 {
 .hero-section {
     height: 100vh;
     background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)),
-                url('https://images.unsplash.com/photo-1564501049412-61c2a3083791?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
+                url('../../logo/hotel-bg.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -208,6 +208,8 @@ h1, h2, h3, h4, h5, h6 {
     box-shadow: var(--shadow-light);
     transition: var(--transition);
     height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
 .room-card:hover {
@@ -252,6 +254,9 @@ h1, h2, h3, h4, h5, h6 {
 
 .room-content {
     padding: 2rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 .room-content h4 {
@@ -299,6 +304,55 @@ h1, h2, h3, h4, h5, h6 {
 .room-price .period {
     color: var(--text-light);
     font-size: 1rem;
+}
+
+/* New Room Pricing Styles */
+.room-availability {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.room-pricing {
+    margin-top: 1rem;
+    min-height: 170px;
+    display: flex;
+    flex-direction: column;
+}
+
+.room-pricing h6 {
+    font-size: 1rem;
+    color: var(--secondary-color);
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+
+.price-option {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.price-option:last-child {
+    border-bottom: none;
+}
+
+.price-option .duration {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.price-option .price {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* Room Actions */
+.room-actions {
+    margin-top: auto;
 }
 
 /* Amenities */

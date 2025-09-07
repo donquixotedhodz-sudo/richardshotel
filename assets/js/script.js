@@ -9,6 +9,13 @@ document.addEventListener('DOMContentLoaded', function() {
     initContactForm();
     initScrollIndicator();
     initParallax();
+    
+    // Booking modal functionality moved to booking-modal.js
+    
+    // Initialize room selection modal if it exists
+    if (document.getElementById('roomSelectionModal')) {
+        initRoomSelectionModal();
+    }
 });
 
 // Navbar functionality
@@ -203,9 +210,15 @@ function showNotification(message, type = 'info') {
     // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
+    
+    // Set icon based on type
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    else if (type === 'error') icon = 'exclamation-circle';
+    
     notification.innerHTML = `
         <div class="notification-content">
-            <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+            <i class="fas fa-${icon}"></i>
             <span>${message}</span>
             <button class="notification-close">
                 <i class="fas fa-times"></i>
@@ -213,12 +226,17 @@ function showNotification(message, type = 'info') {
         </div>
     `;
     
+    // Set background color based on type
+    let backgroundColor = '#17a2b8'; // info
+    if (type === 'success') backgroundColor = '#28a745';
+    else if (type === 'error') backgroundColor = '#dc3545';
+    
     // Add styles
     notification.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
-        background: ${type === 'success' ? '#28a745' : '#17a2b8'};
+        background: ${backgroundColor};
         color: white;
         padding: 15px 20px;
         border-radius: 10px;
@@ -369,3 +387,51 @@ notificationStyles.textContent = `
     }
 `;
 document.head.appendChild(notificationStyles);
+
+// Booking modal functions moved to booking-modal.js
+
+// updateCheckOutDateTime and updatePriceDisplay functions moved to booking-modal.js
+
+// initBookingModal function moved to booking-modal.js
+
+// Room Selection Modal Functionality
+function initRoomSelectionModal() {
+    const roomSelectionCards = document.querySelectorAll('.room-selection-card');
+    const roomSelectionModal = document.getElementById('roomSelectionModal');
+    const bookingModal = document.getElementById('bookingModal');
+    
+    roomSelectionCards.forEach(card => {
+        card.addEventListener('click', function() {
+            const roomType = this.getAttribute('data-room-type');
+            const roomTypeId = this.getAttribute('data-room-type-id');
+            
+            // Close room selection modal
+            const roomSelectionModalInstance = bootstrap.Modal.getInstance(roomSelectionModal);
+            if (roomSelectionModalInstance) {
+                roomSelectionModalInstance.hide();
+            }
+            
+            // Wait for the modal to close, then use booking modal handler
+            setTimeout(() => {
+                // Use the handleRoomSelection function from booking-modal.js
+                if (typeof handleRoomSelection === 'function') {
+                    handleRoomSelection(roomType, roomTypeId);
+                }
+            }, 300);
+        });
+        
+        // Add hover effects
+        card.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.02)';
+            this.style.transition = 'transform 0.2s ease';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            this.style.transform = 'scale(1)';
+        });
+    });
+}
+
+
+
+// Booking modal initialization is now handled in the main DOMContentLoaded event listener above

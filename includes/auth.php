@@ -119,6 +119,15 @@
                             <h2 class="form-title">Welcome Back</h2>
                             <p class="form-subtitle">Sign in to your account</p>
                             
+                            <!-- Role Display -->
+                            <div class="mb-4">
+                                <div class="alert alert-info d-flex align-items-center" role="alert">
+                                    <i class="fas fa-user me-2" id="roleIcon"></i>
+                                    <span id="roleDisplay">Customer Login</span>
+                                </div>
+                                <input type="hidden" id="userRole" name="userRole" value="customer">
+                            </div>
+                            
                             <form id="loginFormElement">
                                 <div class="form-floating mb-3">
                                     <input type="email" class="form-control" id="loginEmail" placeholder="Email Address" required>
@@ -142,20 +151,6 @@
                                 </button>
                             </form>
                             
-                            <div class="social-login">
-                                <p class="text-center mb-3">Or sign in with</p>
-                                <div class="d-flex gap-3 justify-content-center">
-                                    <button class="btn btn-outline-primary social-btn">
-                                        <i class="fab fa-google"></i>
-                                    </button>
-                                    <button class="btn btn-outline-primary social-btn">
-                                        <i class="fab fa-facebook-f"></i>
-                                    </button>
-                                    <button class="btn btn-outline-primary social-btn">
-                                        <i class="fab fa-twitter"></i>
-                                    </button>
-                                </div>
-                            </div>
                         </div>
                     </div>
                     
@@ -178,5 +173,139 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
     <script src="../assets/js/auth.js"></script>
+    
+    <!-- Authentication JavaScript -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set up form for customer login only
+        const roleInput = document.getElementById('userRole');
+        const roleDisplay = document.getElementById('roleDisplay');
+        const roleIcon = document.getElementById('roleIcon');
+        
+        roleInput.value = 'customer';
+        roleDisplay.textContent = 'Customer Login';
+        roleIcon.className = 'fas fa-user me-2';
+        
+        // Handle login form submission
+        document.getElementById('loginFormElement').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const rememberMe = document.getElementById('rememberMe').checked;
+            
+            // Show loading state
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Signing In...';
+            submitBtn.disabled = true;
+            
+            // Send AJAX request
+            fetch('auth_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&rememberMe=${rememberMe}&role=customer`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    showAlert('success', data.message);
+                    // Redirect to home page for customers
+                    setTimeout(() => {
+                        window.location.href = '/rhms/index.php';
+                    }, 1500);
+                } else {
+                    showAlert('danger', data.message);
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'An error occurred. Please try again.');
+            })
+            .finally(() => {
+                // Reset button
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        });
+        
+        // Handle signup form submission
+        document.getElementById('signupFormElement').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const firstName = document.getElementById('firstName').value;
+            const lastName = document.getElementById('lastName').value;
+            const email = document.getElementById('signupEmail').value;
+            const phone = document.getElementById('phone').value;
+            const password = document.getElementById('signupPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            // Show loading state
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating Account...';
+            submitBtn.disabled = true;
+            
+            // Send AJAX request
+            fetch('auth_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=register&firstName=${encodeURIComponent(firstName)}&lastName=${encodeURIComponent(lastName)}&email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}&password=${encodeURIComponent(password)}&confirmPassword=${encodeURIComponent(confirmPassword)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    showAlert('success', data.message + ' You can now sign in.');
+                    // Switch to login form
+                    setTimeout(() => {
+                        document.getElementById('showLoginBtn').click();
+                        // Clear signup form
+                        this.reset();
+                    }, 2000);
+                } else {
+                    showAlert('danger', data.message);
+                }
+            })
+            .catch(error => {
+                showAlert('danger', 'An error occurred. Please try again.');
+            })
+            .finally(() => {
+                // Reset button
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        });
+        
+        // Function to show alerts
+        function showAlert(type, message) {
+            // Remove existing alerts
+            const existingAlerts = document.querySelectorAll('.alert');
+            existingAlerts.forEach(alert => alert.remove());
+            
+            // Create new alert
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(alertDiv);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+    });
+    </script>
 </body>
 </html>

@@ -1,288 +1,254 @@
 <?php
-/**
- * Authentication Handler for RHMS
- * Processes signup and login requests
- */
+require_once 'config.php';
 
-session_start();
-require_once '../database/Database.php';
+// Set content type to JSON
+header('Content-Type: application/json');
 
-class AuthHandler {
-    private $db;
-    
-    public function __construct() {
-        try {
-            $this->db = new Database();
-            // Initialize tables if they don't exist
-            $this->db->initializeTables();
-        } catch (Exception $e) {
-            $this->sendResponse(false, 'Database connection failed: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Handle signup request
-     */
-    public function handleSignup() {
-        try {
-            // Validate input
-            $firstName = $this->sanitizeInput($_POST['firstName'] ?? '');
-            $lastName = $this->sanitizeInput($_POST['lastName'] ?? '');
-            $email = $this->sanitizeInput($_POST['email'] ?? '');
-            $phone = $this->sanitizeInput($_POST['phone'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $confirmPassword = $_POST['confirmPassword'] ?? '';
-            
-            // Validation
-            if (empty($firstName) || empty($lastName) || empty($email) || empty($phone) || empty($password)) {
-                $this->sendResponse(false, 'All fields are required.');
-                return;
-            }
-            
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $this->sendResponse(false, 'Invalid email format.');
-                return;
-            }
-            
-            if (strlen($password) < 6) {
-                $this->sendResponse(false, 'Password must be at least 6 characters long.');
-                return;
-            }
-            
-            if ($password !== $confirmPassword) {
-                $this->sendResponse(false, 'Passwords do not match.');
-                return;
-            }
-            
-            // Check if email already exists
-            $existingUser = $this->db->fetchOne(
-                "SELECT id FROM users WHERE email = ?", 
-                [$email]
-            );
-            
-            if ($existingUser) {
-                $this->sendResponse(false, 'Email address is already registered.');
-                return;
-            }
-            
-            // Hash password
-            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            
-            // Insert new user
-            $userId = $this->db->insert(
-                "INSERT INTO users (first_name, last_name, email, phone, password_hash, is_verified, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [$firstName, $lastName, $email, $phone, $passwordHash, true, 'active']
-            );
-            
-            if ($userId) {
-                // Log the user in
-                $this->createUserSession($userId, $email);
-                $this->sendResponse(true, 'Account created successfully! Welcome to Richard\'s Hotel.');
-            } else {
-                $this->sendResponse(false, 'Failed to create account. Please try again.');
-            }
-            
-        } catch (Exception $e) {
-            $this->sendResponse(false, 'An error occurred during signup: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Handle login request
-     */
-    public function handleLogin() {
-        try {
-            $email = $this->sanitizeInput($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $rememberMe = isset($_POST['rememberMe']);
-            
-            // Validation
-            if (empty($email) || empty($password)) {
-                $this->sendResponse(false, 'Email and password are required.');
-                return;
-            }
-            
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $this->sendResponse(false, 'Invalid email format.');
-                return;
-            }
-            
-            // Check rate limiting
-            if ($this->isRateLimited($email)) {
-                $this->sendResponse(false, 'Too many login attempts. Please try again later.');
-                return;
-            }
-            
-            // Get user from database
-            $user = $this->db->fetchOne(
-                "SELECT id, first_name, last_name, email, password_hash, status FROM users WHERE email = ?",
-                [$email]
-            );
-            
-            // Log login attempt
-            $this->logLoginAttempt($email, $user !== false);
-            
-            if (!$user) {
-                $this->sendResponse(false, 'Invalid email or password.');
-                return;
-            }
-            
-            if ($user['status'] !== 'active') {
-                $this->sendResponse(false, 'Account is not active. Please contact support.');
-                return;
-            }
-            
-            // Verify password
-            if (!password_verify($password, $user['password_hash'])) {
-                $this->sendResponse(false, 'Invalid email or password.');
-                return;
-            }
-            
-            // Update last login
-            $this->db->update(
-                "UPDATE users SET last_login = NOW() WHERE id = ?",
-                [$user['id']]
-            );
-            
-            // Create session
-            $this->createUserSession($user['id'], $user['email'], $rememberMe);
-            
-            $this->sendResponse(true, 'Login successful! Welcome back, ' . $user['first_name'] . '.');
-            
-        } catch (Exception $e) {
-            $this->sendResponse(false, 'An error occurred during login: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Handle logout request
-     */
-    public function handleLogout() {
-        try {
-            // Destroy session from database if exists
-            if (isset($_SESSION['session_token'])) {
-                $this->db->delete(
-                    "DELETE FROM user_sessions WHERE session_token = ?",
-                    [$_SESSION['session_token']]
-                );
-            }
-            
-            // Destroy PHP session
-            session_destroy();
-            
-            $this->sendResponse(true, 'Logged out successfully.');
-            
-        } catch (Exception $e) {
-            $this->sendResponse(false, 'An error occurred during logout.');
-        }
-    }
-    
-    /**
-     * Create user session
-     */
-    private function createUserSession($userId, $email, $rememberMe = false) {
-        // Generate session token
-        $sessionToken = bin2hex(random_bytes(32));
+// Enable CORS if needed
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Only allow POST requests
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+    exit;
+}
+
+// Get the action from POST data
+$action = $_POST['action'] ?? '';
+
+try {
+    if ($action === 'register') {
+        // Get and validate input data
+        $firstName = trim($_POST['firstName'] ?? '');
+        $lastName = trim($_POST['lastName'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirmPassword = $_POST['confirmPassword'] ?? '';
         
-        // Set session expiry
-        $expiryTime = $rememberMe ? (time() + (30 * 24 * 60 * 60)) : (time() + (24 * 60 * 60)); // 30 days or 1 day
+        // Validation
+        $errors = [];
         
-        // Store in database
-        $this->db->insert(
-            "INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?)",
-            [
-                $userId,
-                $sessionToken,
-                $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-                $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
-                date('Y-m-d H:i:s', $expiryTime)
-            ]
-        );
+        if (empty($firstName)) {
+            $errors[] = 'First name is required';
+        } elseif (strlen($firstName) < 2 || strlen($firstName) > 50) {
+            $errors[] = 'First name must be between 2 and 50 characters';
+        }
         
-        // Set PHP session variables
-        $_SESSION['user_id'] = $userId;
-        $_SESSION['email'] = $email;
-        $_SESSION['session_token'] = $sessionToken;
+        if (empty($lastName)) {
+            $errors[] = 'Last name is required';
+        } elseif (strlen($lastName) < 2 || strlen($lastName) > 50) {
+            $errors[] = 'Last name must be between 2 and 50 characters';
+        }
+        
+        if (empty($email)) {
+            $errors[] = 'Email is required';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Please enter a valid email address';
+        }
+        
+        if (empty($phone)) {
+            $errors[] = 'Phone number is required';
+        } elseif (!preg_match('/^[+]?[0-9\s\-\(\)]{10,20}$/', $phone)) {
+            $errors[] = 'Please enter a valid phone number';
+        }
+        
+        if (empty($password)) {
+            $errors[] = 'Password is required';
+        } elseif (strlen($password) < 8) {
+            $errors[] = 'Password must be at least 8 characters long';
+        } elseif (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/', $password)) {
+            $errors[] = 'Password must contain at least one uppercase letter, one lowercase letter, and one number';
+        }
+        
+        if ($password !== $confirmPassword) {
+            $errors[] = 'Passwords do not match';
+        }
+        
+        if (!empty($errors)) {
+            throw new Exception(implode('. ', $errors));
+        }
+        
+        // Check if email already exists
+        global $pdo;
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        
+        if ($stmt->fetch()) {
+            throw new Exception('An account with this email already exists');
+        }
+        
+        // Hash password
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        
+        // Insert new user
+        $stmt = $pdo->prepare("
+            INSERT INTO users (first_name, last_name, email, phone, password_hash) 
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        
+        $result = $stmt->execute([$firstName, $lastName, $email, $phone, $passwordHash]);
+        
+        if ($result) {
+            echo json_encode([
+                'success' => true,
+                'message' => 'Account created successfully!'
+            ]);
+        } else {
+            throw new Exception('Failed to create account. Please try again.');
+        }
+        
+    } elseif ($action === 'login') {
+        // Get and validate input data
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $rememberMe = isset($_POST['rememberMe']) && $_POST['rememberMe'] === 'true';
+        $role = $_POST['role'] ?? 'customer';
+        
+        // Validation
+        if (empty($email)) {
+            throw new Exception($role === 'admin' ? 'Username is required' : 'Email is required');
+        }
+        
+        if (empty($password)) {
+            throw new Exception('Password is required');
+        }
+        
+        // Validate email format only for customers
+        if ($role === 'customer' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new Exception('Please enter a valid email address');
+        }
+        
+        global $pdo;
+        
+        // Check for account lockout based on role
+        if ($role === 'admin') {
+            $stmt = $pdo->prepare("
+                SELECT id, full_name, email, username, password_hash, is_active, 
+                       failed_login_attempts, locked_until
+                FROM admins 
+                WHERE username = ?
+            ");
+            $stmt->execute([$email]); // $email contains username for admin
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT id, first_name, last_name, email, password_hash, is_active, 
+                       failed_login_attempts, locked_until
+                FROM users 
+                WHERE email = ?
+            ");
+            $stmt->execute([$email]);
+        }
+        $user = $stmt->fetch();
+        
+        if (!$user) {
+            throw new Exception('Invalid email or password');
+        }
+        
+        // Check if account is active
+        if (!$user['is_active']) {
+            throw new Exception('Your account has been deactivated. Please contact support.');
+        }
+        
+        // Check if account is locked
+        if ($user['locked_until'] && new DateTime() < new DateTime($user['locked_until'])) {
+            throw new Exception('Account is temporarily locked due to multiple failed login attempts. Please try again later.');
+        }
+        
+        // Verify password
+        if (!password_verify($password, $user['password_hash'])) {
+            // Increment failed login attempts
+            $failedAttempts = $user['failed_login_attempts'] + 1;
+            $lockedUntil = null;
+            
+            // Lock account after 5 failed attempts for 30 minutes
+            if ($failedAttempts >= 5) {
+                $lockedUntil = (new DateTime())->add(new DateInterval('PT30M'))->format('Y-m-d H:i:s');
+            }
+            
+            $tableName = $role === 'admin' ? 'admins' : 'users';
+            $stmt = $pdo->prepare("
+                UPDATE {$tableName} 
+                SET failed_login_attempts = ?, locked_until = ? 
+                WHERE id = ?
+            ");
+            $stmt->execute([$failedAttempts, $lockedUntil, $user['id']]);
+            
+            throw new Exception('Invalid email or password');
+        }
+        
+        // Reset failed login attempts on successful login
+        $tableName = $role === 'admin' ? 'admins' : 'users';
+        $stmt = $pdo->prepare("
+            UPDATE {$tableName} 
+            SET failed_login_attempts = 0, locked_until = NULL, last_login = NOW() 
+            WHERE id = ?
+        ");
+        $stmt->execute([$user['id']]);
+        
+        // Create session
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['user_email'] = $user['email'];
+        $_SESSION['user_role'] = $role;
         $_SESSION['logged_in'] = true;
         
-        // Set cookie if remember me is checked
-        if ($rememberMe) {
-            setcookie('remember_token', $sessionToken, $expiryTime, '/', '', false, true);
+        if ($role === 'admin') {
+            $_SESSION['user_name'] = $user['full_name'];
+            $_SESSION['admin_username'] = $user['username'];
+        } else {
+            $_SESSION['user_name'] = $user['first_name'] . ' ' . $user['last_name'];
         }
-    }
-    
-    /**
-     * Check if IP/email is rate limited
-     */
-    private function isRateLimited($email) {
-        $attempts = $this->db->fetchOne(
-            "SELECT COUNT(*) as count FROM login_attempts WHERE (email = ? OR ip_address = ?) AND attempt_time > DATE_SUB(NOW(), INTERVAL 15 MINUTE) AND success = FALSE",
-            [$email, $_SERVER['REMOTE_ADDR'] ?? 'unknown']
-        );
         
-        return $attempts['count'] >= 5; // Max 5 failed attempts in 15 minutes
-    }
-    
-    /**
-     * Log login attempt
-     */
-    private function logLoginAttempt($email, $success) {
-        $this->db->insert(
-            "INSERT INTO login_attempts (email, ip_address, success, user_agent) VALUES (?, ?, ?, ?)",
-            [
-                $email,
-                $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-                $success ? 1 : 0,
-                $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
-            ]
-        );
-    }
-    
-    /**
-     * Sanitize input
-     */
-    private function sanitizeInput($input) {
-        return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
-    }
-    
-    /**
-     * Send JSON response
-     */
-    private function sendResponse($success, $message, $data = null) {
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => $success,
-            'message' => $message,
-            'data' => $data
+        // Set session timeout
+        $sessionTimeout = $rememberMe ? (30 * 24 * 60 * 60) : (2 * 60 * 60); // 30 days or 2 hours
+        $_SESSION['expires_at'] = time() + $sessionTimeout;
+        
+        // Store session in database
+        $sessionId = session_id();
+        $expiresAt = (new DateTime())->add(new DateInterval('P' . ($rememberMe ? '30' : '0') . 'DT' . ($rememberMe ? '0' : '2') . 'H'))->format('Y-m-d H:i:s');
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO user_sessions (user_id, session_id, ip_address, user_agent, expires_at) 
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            ip_address = VALUES(ip_address),
+            user_agent = VALUES(user_agent),
+            expires_at = VALUES(expires_at),
+            is_active = TRUE
+        ");
+        
+        $stmt->execute([
+            $user['id'],
+            $sessionId,
+            $_SERVER['REMOTE_ADDR'] ?? '',
+            $_SERVER['HTTP_USER_AGENT'] ?? '',
+            $expiresAt
         ]);
-        exit;
+        
+        $userName = $role === 'admin' ? $user['full_name'] : $user['first_name'] . ' ' . $user['last_name'];
+        $welcomeName = $role === 'admin' ? $user['full_name'] : $user['first_name'];
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Login successful! Welcome back, ' . $welcomeName . '!',
+            'user' => [
+                'id' => $user['id'],
+                'name' => $userName,
+                'email' => $user['email'],
+                'role' => $role
+            ]
+        ]);
+        
+    } else {
+        throw new Exception('Invalid action');
     }
+} catch (Exception $e) {
+    echo json_encode([
+        'success' => false,
+        'message' => $e->getMessage()
+    ]);
 }
-
-// Handle requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $handler = new AuthHandler();
-    
-    $action = $_POST['action'] ?? '';
-    
-    switch ($action) {
-        case 'signup':
-            $handler->handleSignup();
-            break;
-        case 'login':
-            $handler->handleLogin();
-            break;
-        case 'logout':
-            $handler->handleLogout();
-            break;
-        default:
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Invalid action']);
-            break;
-    }
-} else {
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
-}
-
 ?>
